@@ -4,7 +4,7 @@ from rest_framework.exceptions import ValidationError
 
 from api.actions.serializers import ReviewableCountsRelationshipField
 from api.base.utils import absolute_reverse, get_user_auth
-from api.base.serializers import JSONAPISerializer, IDField, LinksField, TypeField, TypedRelationshipField
+from api.base.serializers import JSONAPISerializer, IDField, LinksField, RelationshipField, TypeField, TypedRelationshipField
 from api.providers.permissions import GROUPS
 from api.providers.workflows import Workflows
 from osf.models.user import Email, OSFUser
@@ -65,6 +65,11 @@ class ProviderSerializer(JSONAPISerializer):
 class CollectionProviderSerializer(ProviderSerializer):
     class Meta:
         type_ = 'collection-providers'
+
+    primary_collection = RelationshipField(
+        related_view='collections:collection-detail',
+        related_view_kwargs={'collection_id': '<primary_collection._id>'}
+    )
 
     filterable_fields = frozenset([
         'allow_submissions',
@@ -169,6 +174,7 @@ class ModeratorSerializer(JSONAPISerializer):
         auth = get_user_auth(self.context['request'])
         user_id = validated_data.pop('_id', '')
         address = validated_data.pop('email', '')
+        provider = self.context['provider']
         context = {
             'referrer': auth.user
         }
@@ -186,9 +192,11 @@ class ModeratorSerializer(JSONAPISerializer):
                 if not full_name:
                     raise ValidationError('"full_name" is required when adding a moderator via email.')
                 user = OSFUser.create_unregistered(full_name, email=address)
-                user.add_unconfirmed_email(user.username)
+                user.add_unclaimed_record(provider, referrer=auth.user,
+                                                 given_name=full_name, email=address)
                 user.save()
-                context['confirmation_url'] = user.get_confirmation_url(user.username)
+                claim_url = user.get_claim_url(provider._id, external=True)
+                context['claim_url'] = claim_url
             else:
                 user = email.user
         else:
@@ -197,12 +205,11 @@ class ModeratorSerializer(JSONAPISerializer):
         if not user:
             raise ValidationError('Unable to find specified user.')
         context['user'] = user
+        context['provider'] = provider
 
-        provider = self.context['provider']
         if bool(get_perms(user, provider)):
             raise ValidationError('Specified user is already a moderator.')
-        context['provider'] = provider
-        if 'confirmation_url' in context:
+        if 'claim_url' in context:
             template = mails.CONFIRM_EMAIL_MODERATION(provider)
         else:
             template = mails.MODERATOR_ADDED(provider)
@@ -210,8 +217,10 @@ class ModeratorSerializer(JSONAPISerializer):
         perm_group = validated_data.pop('permission_group', '')
         if perm_group not in GROUPS:
             raise ValidationError('Unrecognized permission_group')
-        context['role'] = 'an admin' if perm_group == 'admin' else 'a {}'.format(perm_group)
-        context['notification_url'] = '{}settings/notifications'.format(DOMAIN)
+        context['notification_settings_url'] = '{}reviews/preprints/{}/notifications'.format(DOMAIN, provider._id)
+        context['provider_name'] = provider.name
+        context['is_reviews_moderator_notification'] = True
+        context['is_admin'] = perm_group == 'admin'
 
         provider.add_to_group(user, perm_group)
         setattr(user, 'permission_group', perm_group)  # Allows reserialization
