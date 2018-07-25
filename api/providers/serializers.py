@@ -30,6 +30,7 @@ class ProviderSerializer(JSONAPISerializer):
     facebook_app_id = ser.IntegerField(read_only=True, allow_null=True)
     allow_submissions = ser.BooleanField(read_only=True)
     allow_commenting = ser.BooleanField(read_only=True)
+    assets = ser.SerializerMethodField(read_only=True)
 
     links = LinksField({
         'self': 'get_absolute_url',
@@ -61,10 +62,32 @@ class ProviderSerializer(JSONAPISerializer):
     def get_external_url(self, obj):
         return obj.external_url
 
+    def get_assets(self, obj):
+        return {asset.name: asset.file.url for asset in obj.asset_files.all()} or None
+
 
 class CollectionProviderSerializer(ProviderSerializer):
     class Meta:
         type_ = 'collection-providers'
+
+    primary_collection = RelationshipField(
+        related_view='collections:collection-detail',
+        related_view_kwargs={'collection_id': '<primary_collection._id>'}
+    )
+
+    filterable_fields = frozenset([
+        'allow_submissions',
+        'allow_commenting',
+        'description',
+        'domain',
+        'domain_redirect_enabled',
+        'id',
+        'name',
+    ])
+
+class RegistrationProviderSerializer(ProviderSerializer):
+    class Meta:
+        type_ = 'registration-providers'
 
     primary_collection = RelationshipField(
         related_view='collections:collection-detail',

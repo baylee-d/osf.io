@@ -39,6 +39,24 @@ if (String.prototype.endsWith === undefined) {
 
 $('[rel="tooltip"]').tooltip();
 
+// Cookie banner notice for logged out users
+var cookieBannerSelector = '#cookieBanner';
+var CookieBannerViewModel = function(){
+    var self = this;
+    self.elem = $(cookieBannerSelector);
+    var cookieConsentKey = 'osf_cookieconsent';
+
+    self.accept = function() {
+        Cookie.set(cookieConsentKey, '1', { expires: 30, path: '/'});
+    };
+
+    var accepted = Cookie.get(cookieConsentKey) === '1';
+    if (!accepted) {
+        self.elem.css({'display': 'flex'});
+        self.elem.show();
+    }
+};
+
 // If there isn't a user logged in, show the footer slide-in
 var sliderSelector = '#footerSlideIn';
 var SlideInViewModel = function (){
@@ -206,6 +224,10 @@ $(function() {
         $osf.applyBindings(new SlideInViewModel(), sliderSelector);
     }
 
+    if ($(cookieBannerSelector).length) {
+        $osf.applyBindings(new CookieBannerViewModel(), cookieBannerSelector);
+    }
+
     var affix = $('.osf-affix');
     if(affix.length){
         $osf.initializeResponsiveAffix();
@@ -217,7 +239,10 @@ $(function() {
 
     var alertsSelector = '.dismissible-alerts';
     if ($(alertsSelector).length > 0 && window.contextVars.currentUser) {
-        new AlertManager(alertsSelector);
+        for (var i = 0; i < $(alertsSelector).length; i++) {
+            var selectorId = '#' + $(alertsSelector)[i].id;
+            new AlertManager(selectorId);
+        }
     }
 
     if (window.contextVars.keen){

@@ -12,7 +12,7 @@ from website.exceptions import NodeStateError
 from website.project.model import NodeUpdateError
 
 from api.files.serializers import OsfStorageFileSerializer
-from api.nodes.serializers import NodeSerializer, NodeProviderSerializer
+from api.nodes.serializers import NodeSerializer, NodeStorageProviderSerializer
 from api.nodes.serializers import NodeLinksSerializer, NodeLicenseSerializer
 from api.nodes.serializers import NodeContributorsSerializer
 from api.base.serializers import (IDField, RelationshipField, LinksField, HideIfWithdrawal,
@@ -105,7 +105,7 @@ class BaseRegistrationSerializer(NodeSerializer):
     )
 
     files = HideIfWithdrawal(RelationshipField(
-        related_view='registrations:registration-providers',
+        related_view='registrations:registration-storage-providers',
         related_view_kwargs={'node_id': '<_id>'}
     ))
 
@@ -136,7 +136,8 @@ class BaseRegistrationSerializer(NodeSerializer):
 
     forks = HideIfWithdrawal(RelationshipField(
         related_view='registrations:registration-forks',
-        related_view_kwargs={'node_id': '<_id>'}
+        related_view_kwargs={'node_id': '<_id>'},
+        related_meta={'count': 'get_forks_count'},
     ))
 
     node_links = ShowIfVersion(HideIfWithdrawal(RelationshipField(
@@ -145,6 +146,18 @@ class BaseRegistrationSerializer(NodeSerializer):
         related_meta={'count': 'get_pointers_count'},
         help_text='This feature is deprecated as of version 2.1. Use linked_nodes instead.'
     )), min_version='2.0', max_version='2.0')
+
+    linked_by_nodes = HideIfWithdrawal(RelationshipField(
+        related_view='registrations:registration-linked-by-nodes',
+        related_view_kwargs={'node_id': '<_id>'},
+        related_meta={'count': 'get_linked_by_nodes_count'},
+    ))
+
+    linked_by_registrations = HideIfWithdrawal(RelationshipField(
+        related_view='registrations:registration-linked-by-registrations',
+        related_view_kwargs={'node_id': '<_id>'},
+        related_meta={'count': 'get_linked_by_registrations_count'},
+    ))
 
     parent = HideIfWithdrawal(RelationshipField(
         related_view='registrations:registration-detail',
@@ -283,6 +296,9 @@ class BaseRegistrationSerializer(NodeSerializer):
     def get_current_user_permissions(self, obj):
         return NodeSerializer.get_current_user_permissions(self, obj)
 
+    def get_view_only_links_count(self, obj):
+        return obj.private_links.filter(is_deleted=False).count()
+
     def update(self, registration, validated_data):
         auth = Auth(self.context['request'].user)
         # Update tags
@@ -370,9 +386,9 @@ class RegistrationFileSerializer(OsfStorageFileSerializer):
                                      help_text='The registration that this file belongs to'
                              )
 
-class RegistrationProviderSerializer(NodeProviderSerializer):
+class RegistrationStorageProviderSerializer(NodeStorageProviderSerializer):
     """
-    Overrides NodeProviderSerializer to lead to correct registration file links
+    Overrides NodeStorageProviderSerializer to lead to correct registration file links
     """
     files = NodeFileHyperLinkField(
         related_view='registrations:registration-files',
